@@ -5,7 +5,7 @@ import Link from 'next/link';
 import type { Tenant, Vasti, IssueType } from '@/lib/types';
 import { LANGS, type Lang, tt, ISSUE_TYPES } from '@/lib/i18n';
 import { compressImage, uploadToCloudinary } from '@/lib/cloudinaryClient';
-import { submitComplaint } from './actions';
+import { submitComplaint, attachComplaintPhoto } from './actions';
 
 export default function ComplaintForm({
   tenant,
@@ -34,6 +34,7 @@ export default function ComplaintForm({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [done, setDone] = useState<{ ticketCode: string } | null>(null);
 
   useEffect(() => {
@@ -55,6 +56,7 @@ export default function ComplaintForm({
   async function onPickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0];
     if (!f) return;
+    clearFieldError('photo');
     try {
       const compressed = await compressImage(f);
       setFile(compressed);
@@ -65,33 +67,64 @@ export default function ComplaintForm({
     }
   }
 
-  function validate(): string | null {
-    if (!file) return 'photo_required';
-    if (!issueType) return 'issue_required';
-    if (!vastiId) return 'vasti_required';
-    if (!landmark.trim()) return 'landmark_required';
-    if (!name.trim()) return 'name_required';
-    if (!/^\d{10}$/.test(phone)) return 'invalid_mobile';
-    return null;
+  function validate(): Record<string, string> {
+    const req = tt('required', lang);
+    const errs: Record<string, string> = {};
+    if (!file) errs.photo = req;
+    if (!issueType) errs.issueType = req;
+    if (!vastiId) errs.vasti = req;
+    if (!landmark.trim()) errs.landmark = req;
+    if (!name.trim()) errs.name = req;
+    if (!/^\d{10}$/.test(phone)) errs.phone = tt('invalidMobile', lang);
+    return errs;
+  }
+
+  function clearFieldError(key: string) {
+    setFieldErrors((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+  }
+
+  // Pre-fill the form with sample data for demos/testing (photo included).
+  async function fillDemo() {
+    setIssueType('road_pothole');
+    if (vastis[0]) setVastiId(vastis[0].id);
+    setLandmark('गणपती मंदिरासमोर, रेशन दुकानाजवळ');
+    setGalli('गल्ली ३');
+    setDescription('मोठा खड्डा आहे, पावसाळ्यात पाणी साचते.');
+    setName('राहुल पवार');
+    setPhone('9876543210');
+    setFieldErrors({});
+    try {
+      const res = await fetch('https://picsum.photos/seed/demo-complaint/800/600');
+      const blob = await res.blob();
+      const f = new File([blob], 'demo.jpg', { type: 'image/jpeg' });
+      setFile(f);
+      setPreview(URL.createObjectURL(f));
+    } catch {
+      // offline — photo must be picked manually
+    }
   }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    const v = validate();
-    if (v) {
-      setError(v);
+    const errs = validate();
+    setFieldErrors(errs);
+    if (Object.keys(errs).length > 0) {
+      document.querySelector('[data-error="true"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
     setSubmitting(true);
     try {
-      const up = await uploadToCloudinary(file!, `nagarconnect/${tenant.slug}`);
+      // 1) create the complaint first — no image leaves the phone yet
       const res = await submitComplaint({
         slug: tenant.slug,
         issueType: issueType as IssueType,
         description,
-        photoUrl: up.url,
-        photoPublicId: up.publicId,
         gpsLat: gps.current?.lat ?? null,
         gpsLng: gps.current?.lng ?? null,
         gpsAccuracy: gps.current?.acc ?? null,
@@ -105,6 +138,14 @@ export default function ComplaintForm({
         setError(res.error || 'submit_failed');
         setSubmitting(false);
         return;
+      }
+      // 2) only after success: upload photo to Cloudinary and attach it
+      try {
+        const up = await uploadToCloudinary(file!, `nagarconnect/${tenant.slug}`);
+        await attachComplaintPhoto(res.complaintId!, phone, up.url, up.publicId);
+      } catch {
+        // complaint is registered; photo upload failed on flaky network.
+        // Office can still act on the written address.
       }
       setDone({ ticketCode: res.ticketCode! });
     } catch {
@@ -170,8 +211,16 @@ export default function ComplaintForm({
       </header>
 
       <form onSubmit={onSubmit} className="max-w-md mx-auto p-5 space-y-5">
+        <button
+          type="button"
+          onClick={fillDemo}
+          className="w-full rounded-xl border-2 border-dashed border-gray-300 py-2 text-sm text-gray-500 hover:bg-gray-100"
+        >
+          🧪 नमुना डेटा भरा · Fill demo data
+        </button>
+
         {/* Photo */}
-        <Field label={`${tt('photo', lang)} *`} hint={tt('photoHint', lang)}>
+        <Field label={`${tt('photo', lang)} *`} hint={tt('photoHint', lang)} error={fieldErrors.photo}>
           <label className="block">
             {preview ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -192,10 +241,10 @@ export default function ComplaintForm({
         </Field>
 
         {/* Issue type */}
-        <Field label={`${tt('issueType', lang)} *`}>
+        <Field label={`${tt('issueType', lang)} *`} error={fieldErrors.issueType}>
           <select
             value={issueType}
-            onChange={(e) => setIssueType(e.target.value as IssueType)}
+            onChange={(e) => { setIssueType(e.target.value as IssueType); clearFieldError('issueType'); }}
             className="w-full rounded-xl border border-gray-300 px-3 py-3 text-base bg-white"
           >
             <option value="">{tt('selectOne', lang)}</option>
@@ -213,10 +262,10 @@ export default function ComplaintForm({
         </p>
 
         {/* Vasti */}
-        <Field label={`${tt('vasti', lang)} *`}>
+        <Field label={`${tt('vasti', lang)} *`} error={fieldErrors.vasti}>
           <select
             value={vastiId}
-            onChange={(e) => setVastiId(e.target.value)}
+            onChange={(e) => { setVastiId(e.target.value); clearFieldError('vasti'); }}
             className="w-full rounded-xl border border-gray-300 px-3 py-3 text-base bg-white"
           >
             <option value="">{tt('selectOne', lang)}</option>
@@ -229,10 +278,10 @@ export default function ComplaintForm({
         </Field>
 
         {/* Landmark */}
-        <Field label={`${tt('landmark', lang)} *`}>
+        <Field label={`${tt('landmark', lang)} *`} error={fieldErrors.landmark}>
           <input
             value={landmark}
-            onChange={(e) => setLandmark(e.target.value)}
+            onChange={(e) => { setLandmark(e.target.value); clearFieldError('landmark'); }}
             placeholder={tt('landmarkPh', lang)}
             className="w-full rounded-xl border border-gray-300 px-3 py-3 text-base"
           />
@@ -258,19 +307,19 @@ export default function ComplaintForm({
         </Field>
 
         {/* Name */}
-        <Field label={`${tt('name', lang)} *`}>
+        <Field label={`${tt('name', lang)} *`} error={fieldErrors.name}>
           <input
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { setName(e.target.value); clearFieldError('name'); }}
             className="w-full rounded-xl border border-gray-300 px-3 py-3 text-base"
           />
         </Field>
 
         {/* Mobile */}
-        <Field label={`${tt('mobile', lang)} *`}>
+        <Field label={`${tt('mobile', lang)} *`} error={fieldErrors.phone}>
           <input
             value={phone}
-            onChange={(e) => setPhone(e.target.value.replace(/\D/g, '').slice(0, 10))}
+            onChange={(e) => { setPhone(e.target.value.replace(/\D/g, '').slice(0, 10)); clearFieldError('phone'); }}
             inputMode="numeric"
             placeholder="9876543210"
             className="w-full rounded-xl border border-gray-300 px-3 py-3 text-base tracking-wider"
@@ -278,8 +327,10 @@ export default function ComplaintForm({
         </Field>
 
         {error && (
-          <p className="text-red-600 text-sm font-medium">
-            {error === 'invalid_mobile' ? tt('invalidMobile', lang) : `⚠ ${tt('required', lang)}: ${error}`}
+          <p className="text-red-600 text-sm font-medium bg-red-50 border border-red-200 rounded-xl px-3 py-2">
+            ⚠ {error === 'network_error'
+              ? 'नेटवर्क समस्या — पुन्हा प्रयत्न करा · Network error, please retry'
+              : error}
           </p>
         )}
 
@@ -303,17 +354,20 @@ export default function ComplaintForm({
 function Field({
   label,
   hint,
+  error,
   children,
 }: {
   label: string;
   hint?: string;
+  error?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div>
+    <div data-error={error ? 'true' : undefined}>
       <label className="block text-sm font-semibold text-gray-700 mb-1">{label}</label>
       {hint && <p className="text-xs text-gray-400 mb-1">{hint}</p>}
-      {children}
+      <div className={error ? 'rounded-xl ring-2 ring-red-400' : ''}>{children}</div>
+      {error && <p className="mt-1 text-xs font-semibold text-red-600">⚠ {error}</p>}
     </div>
   );
 }

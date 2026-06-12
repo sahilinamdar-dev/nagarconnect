@@ -8,8 +8,6 @@ export interface SubmitInput {
   slug: string;
   issueType: IssueType;
   description?: string;
-  photoUrl: string;
-  photoPublicId: string;
   gpsLat?: number | null;
   gpsLng?: number | null;
   gpsAccuracy?: number | null;
@@ -23,15 +21,16 @@ export interface SubmitInput {
 export interface SubmitResult {
   ok: boolean;
   ticketCode?: string;
+  complaintId?: string;
   error?: string;
 }
 
-// Citizen submission. Uses service role (server-only): resolves slug -> tenant,
-// generates a human-readable ticket code, inserts complaint + 'created' event.
+// Citizen submission, step 1 of 2. Creates the complaint WITHOUT the photo.
+// The client uploads to Cloudinary only after this succeeds, then calls
+// attachComplaintPhoto — so failed submissions never leave orphan images.
 export async function submitComplaint(input: SubmitInput): Promise<SubmitResult> {
   // server-side validation (defence in depth)
   if (!/^\d{10}$/.test(input.citizenPhone)) return { ok: false, error: 'invalid_mobile' };
-  if (!input.photoUrl) return { ok: false, error: 'photo_required' };
   if (!input.landmark?.trim()) return { ok: false, error: 'landmark_required' };
   if (!input.vastiId) return { ok: false, error: 'vasti_required' };
   if (!input.citizenName?.trim()) return { ok: false, error: 'name_required' };
@@ -62,8 +61,6 @@ export async function submitComplaint(input: SubmitInput): Promise<SubmitResult>
       ticket_code: code,
       issue_type: input.issueType,
       description: input.description || null,
-      photo_url: input.photoUrl,
-      photo_public_id: input.photoPublicId || null,
       gps_lat: input.gpsLat ?? null,
       gps_lng: input.gpsLng ?? null,
       gps_accuracy_m: input.gpsAccuracy ?? null,
@@ -91,5 +88,35 @@ export async function submitComplaint(input: SubmitInput): Promise<SubmitResult>
     citizenName: input.citizenName,
   });
 
-  return { ok: true, ticketCode: complaint.ticket_code };
+  return { ok: true, ticketCode: complaint.ticket_code, complaintId: complaint.id };
+}
+
+// Step 2 of 2: attach the Cloudinary photo after the complaint exists.
+// Guarded by citizen phone match + only-if-photo-still-empty so it can't
+// be used to overwrite someone else's complaint photo.
+export async function attachComplaintPhoto(
+  complaintId: string,
+  citizenPhone: string,
+  photoUrl: string,
+  photoPublicId: string
+): Promise<{ ok: boolean }> {
+  if (!photoUrl || !complaintId) return { ok: false };
+  const db = createAdminSupabase();
+  const { data, error } = await db
+    .from('complaints')
+    .update({ photo_url: photoUrl, photo_public_id: photoPublicId || null })
+    .eq('id', complaintId)
+    .eq('citizen_phone', citizenPhone)
+    .is('photo_url', null)
+    .select('id')
+    .single();
+  if (error || !data) return { ok: false };
+
+  await db.from('complaint_events').insert({
+    complaint_id: complaintId,
+    actor_id: null,
+    event_type: 'photo_added',
+    detail: 'फोटो जोडला · Photo uploaded',
+  });
+  return { ok: true };
 }

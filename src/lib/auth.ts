@@ -1,9 +1,12 @@
+import { cache } from 'react';
 import { redirect } from 'next/navigation';
 import { createServerSupabase } from './supabase/server';
 import type { TeamMember, Tenant } from './types';
 
 // Loads the logged-in member + their tenant. Redirects to login if absent.
-export async function requireMember(): Promise<{ member: TeamMember; tenant: Tenant }> {
+// cache() dedupes the 3 round-trips when layout AND page both call this
+// in the same request — halves admin page latency.
+export const requireMember = cache(async (): Promise<{ member: TeamMember; tenant: Tenant }> => {
   const supabase = await createServerSupabase();
   const {
     data: { user },
@@ -26,4 +29,4 @@ export async function requireMember(): Promise<{ member: TeamMember; tenant: Ten
   if (!tenant) redirect('/admin/login');
 
   return { member, tenant };
-}
+});

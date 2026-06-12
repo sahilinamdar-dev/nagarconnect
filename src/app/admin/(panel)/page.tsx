@@ -1,13 +1,15 @@
 import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { requireMember } from '@/lib/auth';
-import { STATUS_META, issueLabel } from '@/lib/i18n';
+import { getAdminLang } from '@/lib/adminLang';
+import { STATUS_META, issueLabel, tt } from '@/lib/i18n';
 import type { Complaint, ComplaintStatus, IssueType } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
 export default async function Dashboard() {
-  await requireMember();
+  const [{ tenant }, lang] = await Promise.all([requireMember(), getAdminLang()]);
+  const theme = tenant.theme_color || '#0f766e';
   const db = await createServerSupabase();
   const { data } = await db
     .from('complaints')
@@ -32,53 +34,86 @@ export default async function Dashboard() {
 
   const byIssue = new Map<IssueType, number>();
   rows.forEach((r) => byIssue.set(r.issue_type, (byIssue.get(r.issue_type) || 0) + 1));
+  const maxIssue = Math.max(1, ...byIssue.values());
+
+  const cards: { label: string; value: number | string; color?: string; icon: string }[] = [
+    { label: tt('total', lang), value: total, icon: '📋' },
+    { label: STATUS_META.new[lang], value: byStatus('new'), color: STATUS_META.new.color, icon: '🆕' },
+    { label: STATUS_META.in_progress[lang], value: byStatus('in_progress'), color: STATUS_META.in_progress.color, icon: '🔧' },
+    { label: STATUS_META.resolved[lang], value: byStatus('resolved'), color: STATUS_META.resolved.color, icon: '✅' },
+  ];
 
   return (
     <div className="space-y-6">
-      <h1 className="text-xl font-bold">डॅशबोर्ड · Dashboard</h1>
-
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Stat label="एकूण · Total" value={total} />
-        <Stat label="नवीन · New" value={byStatus('new')} color={STATUS_META.new.color} />
-        <Stat label="सुरू · In Progress" value={byStatus('in_progress')} color={STATUS_META.in_progress.color} />
-        <Stat label="सोडवली · Resolved" value={byStatus('resolved')} color={STATUS_META.resolved.color} />
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-slate-800">{tt('dashboard', lang)}</h1>
+        <Link
+          href="/admin/complaints"
+          className="rounded-xl px-4 py-2.5 text-white text-sm font-semibold shadow-md hover:shadow-lg hover:-translate-y-0.5 transition-all"
+          style={{ backgroundColor: theme }}
+        >
+          {tt('viewAll', lang)} →
+        </Link>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Stat label="निराकरण दर · Resolution rate" value={`${resolutionRate}%`} />
-        <Stat label="सरासरी वेळ · Avg resolution" value={avgHours == null ? '—' : `${avgHours}h`} />
-      </div>
-
-      <section className="bg-white rounded-xl shadow p-4">
-        <h2 className="font-semibold mb-3">प्रकारानुसार · By issue type</h2>
-        <div className="space-y-2">
-          {[...byIssue.entries()].map(([k, v]) => (
-            <div key={k} className="flex items-center gap-2">
-              <span className="w-40 text-sm">{issueLabel(k, 'mr')}</span>
-              <div className="flex-1 bg-gray-100 rounded h-4">
-                <div
-                  className="h-4 rounded bg-teal-600"
-                  style={{ width: `${total ? (v / total) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="w-8 text-right text-sm">{v}</span>
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        {cards.map((c) => (
+          <div
+            key={c.label}
+            className="bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow p-5"
+          >
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{c.label}</p>
+              <span className="text-lg">{c.icon}</span>
             </div>
-          ))}
+            <p className="mt-2 text-3xl font-bold tabular-nums" style={c.color ? { color: c.color } : { color: '#0f172a' }}>
+              {c.value}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid sm:grid-cols-2 gap-4">
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{tt('resolutionRate', lang)}</p>
+          <div className="mt-3 flex items-center gap-4">
+            <p className="text-3xl font-bold text-slate-900">{resolutionRate}%</p>
+            <div className="flex-1 h-3 bg-slate-100 rounded-full overflow-hidden">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{ width: `${resolutionRate}%`, backgroundColor: theme }}
+              />
+            </div>
+          </div>
+        </div>
+        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+          <p className="text-xs font-medium text-slate-500 uppercase tracking-wide">{tt('avgResolution', lang)}</p>
+          <p className="mt-3 text-3xl font-bold text-slate-900">
+            {avgHours == null ? '—' : `${avgHours}h`}
+          </p>
+        </div>
+      </div>
+
+      <section className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+        <h2 className="font-semibold text-slate-800 mb-4">{tt('byIssueType', lang)}</h2>
+        <div className="space-y-3">
+          {[...byIssue.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .map(([k, v]) => (
+              <div key={k} className="flex items-center gap-3">
+                <span className="w-44 text-sm text-slate-600 truncate">{issueLabel(k, lang)}</span>
+                <div className="flex-1 bg-slate-100 rounded-full h-5 overflow-hidden">
+                  <div
+                    className="h-full rounded-full flex items-center justify-end pr-2 text-[10px] text-white font-bold transition-all"
+                    style={{ width: `${(v / maxIssue) * 100}%`, backgroundColor: theme, minWidth: '1.75rem' }}
+                  >
+                    {v}
+                  </div>
+                </div>
+              </div>
+            ))}
         </div>
       </section>
-
-      <Link href="/admin/complaints" className="inline-block rounded-xl bg-teal-700 text-white px-5 py-3 font-semibold">
-        सर्व तक्रारी पहा · View all complaints
-      </Link>
-    </div>
-  );
-}
-
-function Stat({ label, value, color }: { label: string; value: number | string; color?: string }) {
-  return (
-    <div className="bg-white rounded-xl shadow p-4">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-2xl font-bold" style={color ? { color } : undefined}>{value}</p>
     </div>
   );
 }

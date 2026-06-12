@@ -1,7 +1,8 @@
 import Link from 'next/link';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { requireMember } from '@/lib/auth';
-import { STATUS_META, issueLabel, ISSUE_TYPES } from '@/lib/i18n';
+import { getAdminLang } from '@/lib/adminLang';
+import { STATUS_META, issueLabel, ISSUE_TYPES, tt, type Lang } from '@/lib/i18n';
 import type { ComplaintStatus, IssueType, Vasti } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -16,7 +17,7 @@ interface Row {
   citizen_phone: string;
   photo_url: string | null;
   created_at: string;
-  vastis: { name_marathi: string } | null;
+  vastis: { name_marathi: string; name_english: string } | null;
   assigned: { name: string } | null;
 }
 
@@ -32,6 +33,7 @@ export default async function ComplaintsList({
   searchParams: Promise<Record<string, string | undefined>>;
 }) {
   await requireMember();
+  const adminLang: Lang = await getAdminLang();
   const sp = await searchParams;
   const db = await createServerSupabase();
 
@@ -44,7 +46,7 @@ export default async function ComplaintsList({
   let q = db
     .from('complaints')
     .select(
-      'id, ticket_code, issue_type, status, landmark, citizen_name, citizen_phone, photo_url, created_at, vastis(name_marathi), assigned:team_members!complaints_assigned_to_fkey(name)'
+      'id, ticket_code, issue_type, status, landmark, citizen_name, citizen_phone, photo_url, created_at, vastis(name_marathi, name_english), assigned:team_members!complaints_assigned_to_fkey(name)'
     )
     .order('created_at', { ascending: false });
 
@@ -58,76 +60,96 @@ export default async function ComplaintsList({
   const rows = data ?? [];
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">तक्रारी · Complaints ({rows.length})</h1>
-      </div>
+    <div className="space-y-5">
+      <h1 className="text-2xl font-bold text-slate-800">
+        {tt('complaints', adminLang)}{' '}
+        <span className="text-base font-medium text-slate-400">({rows.length})</span>
+      </h1>
 
       {/* Filters */}
-      <form className="bg-white rounded-xl shadow p-3 flex flex-wrap gap-2 items-end text-sm">
-        <Select name="status" label="स्थिती" value={sp.status}>
-          <option value="">सर्व</option>
+      <form className="bg-white rounded-2xl border border-slate-100 shadow-sm p-4 flex flex-wrap gap-3 items-end text-sm">
+        <Sel name="status" label={tt('status', adminLang)} value={sp.status}>
+          <option value="">{tt('all', adminLang)}</option>
           {(Object.keys(STATUS_META) as ComplaintStatus[]).map((s) => (
-            <option key={s} value={s}>{STATUS_META[s].mr}</option>
+            <option key={s} value={s}>{STATUS_META[s][adminLang]}</option>
           ))}
-        </Select>
-        <Select name="issue" label="प्रकार" value={sp.issue}>
-          <option value="">सर्व</option>
+        </Sel>
+        <Sel name="issue" label={tt('issueType', adminLang)} value={sp.issue}>
+          <option value="">{tt('all', adminLang)}</option>
           {ISSUE_TYPES.map((i) => (
-            <option key={i.value} value={i.value}>{i.mr}</option>
+            <option key={i.value} value={i.value}>{i[adminLang]}</option>
           ))}
-        </Select>
-        <Select name="vasti" label="वस्ती" value={sp.vasti}>
-          <option value="">सर्व</option>
+        </Sel>
+        <Sel name="vasti" label={tt('vasti', adminLang)} value={sp.vasti}>
+          <option value="">{tt('all', adminLang)}</option>
           {(vastis ?? []).map((v) => (
-            <option key={v.id} value={v.id}>{v.name_marathi}</option>
+            <option key={v.id} value={v.id}>
+              {adminLang === 'en' ? v.name_english : v.name_marathi}
+            </option>
           ))}
-        </Select>
-        <label className="flex flex-col">
-          <span className="text-xs text-gray-500">पासून</span>
-          <input type="date" name="from" defaultValue={sp.from} className="border rounded-lg px-2 py-1" />
+        </Sel>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-slate-500">{tt('from', adminLang)}</span>
+          <input type="date" name="from" defaultValue={sp.from} className="border border-slate-200 rounded-lg px-2.5 py-2 bg-white" />
         </label>
-        <label className="flex flex-col">
-          <span className="text-xs text-gray-500">पर्यंत</span>
-          <input type="date" name="to" defaultValue={sp.to} className="border rounded-lg px-2 py-1" />
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium text-slate-500">{tt('to', adminLang)}</span>
+          <input type="date" name="to" defaultValue={sp.to} className="border border-slate-200 rounded-lg px-2.5 py-2 bg-white" />
         </label>
-        <button className="rounded-lg bg-teal-700 text-white px-4 py-2">फिल्टर</button>
-        <Link href="/admin/complaints" className="px-3 py-2 underline">रीसेट</Link>
+        <button className="rounded-lg bg-slate-900 hover:bg-slate-700 transition-colors text-white px-5 py-2 font-semibold">
+          {tt('filter', adminLang)}
+        </button>
+        <Link href="/admin/complaints" className="px-3 py-2 text-slate-500 hover:text-slate-800 underline">
+          {tt('reset', adminLang)}
+        </Link>
       </form>
 
-      {/* List */}
-      <div className="bg-white rounded-xl shadow divide-y">
-        {rows.length === 0 && <p className="p-4 text-gray-500">तक्रारी नाहीत · No complaints.</p>}
+      {/* Cards */}
+      <div className="grid sm:grid-cols-2 gap-3">
+        {rows.length === 0 && (
+          <p className="col-span-full bg-white rounded-2xl border border-slate-100 p-8 text-center text-slate-400">
+            {tt('noComplaints', adminLang)}
+          </p>
+        )}
         {rows.map((r) => {
           const meta = STATUS_META[r.status];
           return (
             <Link
               key={r.id}
               href={`/admin/complaints/${r.id}`}
-              className="flex gap-3 p-3 hover:bg-gray-50"
+              className="group flex gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-slate-200 transition-all p-3"
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
               {r.photo_url ? (
-                <img src={r.photo_url} alt="" className="w-16 h-16 rounded-lg object-cover flex-shrink-0" />
+                <img
+                  src={r.photo_url}
+                  alt=""
+                  className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
+                  loading="lazy"
+                />
               ) : (
-                <div className="w-16 h-16 rounded-lg bg-gray-100 flex-shrink-0" />
+                <div className="w-20 h-20 rounded-xl bg-slate-100 flex items-center justify-center text-slate-300 text-2xl flex-shrink-0">
+                  📷
+                </div>
               )}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-sm font-semibold">{r.ticket_code}</span>
+                  <span className="font-mono text-sm font-bold text-slate-800">{r.ticket_code}</span>
                   <span
-                    className="px-2 py-0.5 rounded-full text-white text-xs"
+                    className="px-2 py-0.5 rounded-full text-white text-[11px] font-semibold"
                     style={{ backgroundColor: meta.color }}
                   >
-                    {meta.mr}
+                    {meta[adminLang]}
                   </span>
-                  <span className="text-xs text-gray-400 ml-auto">{ageLabel(r.created_at)}</span>
+                  <span className="text-xs text-slate-400 ml-auto whitespace-nowrap">⏱ {ageLabel(r.created_at)}</span>
                 </div>
-                <p className="text-sm">{issueLabel(r.issue_type, 'mr')} · {r.vastis?.name_marathi ?? '—'}</p>
-                <p className="text-xs text-gray-500 truncate">{r.landmark}</p>
-                <p className="text-xs text-gray-400">
+                <p className="mt-1 text-sm font-medium text-slate-700 truncate">
+                  {issueLabel(r.issue_type, adminLang)} · {(adminLang === 'en' ? r.vastis?.name_english : r.vastis?.name_marathi) ?? '—'}
+                </p>
+                <p className="text-xs text-slate-500 truncate">📍 {r.landmark}</p>
+                <p className="text-xs text-slate-400 truncate">
                   {r.citizen_name} · {r.citizen_phone}
-                  {r.assigned && ` · ${r.assigned.name}`}
+                  {r.assigned && <span className="text-slate-500"> · 👤 {r.assigned.name}</span>}
                 </p>
               </div>
             </Link>
@@ -138,7 +160,7 @@ export default async function ComplaintsList({
   );
 }
 
-function Select({
+function Sel({
   name,
   label,
   value,
@@ -150,9 +172,9 @@ function Select({
   children: React.ReactNode;
 }) {
   return (
-    <label className="flex flex-col">
-      <span className="text-xs text-gray-500">{label}</span>
-      <select name={name} defaultValue={value ?? ''} className="border rounded-lg px-2 py-1 bg-white">
+    <label className="flex flex-col gap-1">
+      <span className="text-xs font-medium text-slate-500">{label}</span>
+      <select name={name} defaultValue={value ?? ''} className="border border-slate-200 rounded-lg px-2.5 py-2 bg-white">
         {children}
       </select>
     </label>
