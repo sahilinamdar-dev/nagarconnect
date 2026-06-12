@@ -1,0 +1,95 @@
+'use server';
+
+import { createAdminSupabase } from '@/lib/supabase/admin';
+import { notifier } from '@/lib/notify';
+import type { IssueType } from '@/lib/types';
+
+export interface SubmitInput {
+  slug: string;
+  issueType: IssueType;
+  description?: string;
+  photoUrl: string;
+  photoPublicId: string;
+  gpsLat?: number | null;
+  gpsLng?: number | null;
+  gpsAccuracy?: number | null;
+  vastiId: string;
+  landmark: string;
+  galliDetail?: string;
+  citizenName: string;
+  citizenPhone: string;
+}
+
+export interface SubmitResult {
+  ok: boolean;
+  ticketCode?: string;
+  error?: string;
+}
+
+// Citizen submission. Uses service role (server-only): resolves slug -> tenant,
+// generates a human-readable ticket code, inserts complaint + 'created' event.
+export async function submitComplaint(input: SubmitInput): Promise<SubmitResult> {
+  // server-side validation (defence in depth)
+  if (!/^\d{10}$/.test(input.citizenPhone)) return { ok: false, error: 'invalid_mobile' };
+  if (!input.photoUrl) return { ok: false, error: 'photo_required' };
+  if (!input.landmark?.trim()) return { ok: false, error: 'landmark_required' };
+  if (!input.vastiId) return { ok: false, error: 'vasti_required' };
+  if (!input.citizenName?.trim()) return { ok: false, error: 'name_required' };
+
+  const db = createAdminSupabase();
+
+  const { data: tenant } = await db
+    .from('tenants')
+    .select('id, slug, is_active')
+    .eq('slug', input.slug)
+    .single();
+  if (!tenant || !tenant.is_active) return { ok: false, error: 'tenant_unavailable' };
+
+  // ticket prefix derived from slug digits, fallback to slug uppercase
+  const digits = input.slug.match(/\d+/)?.[0];
+  const prefix = digits ? `P${digits}` : input.slug.slice(0, 4).toUpperCase();
+
+  const { data: code, error: codeErr } = await db.rpc('next_ticket_code', {
+    p_tenant: tenant.id,
+    p_prefix: prefix,
+  });
+  if (codeErr || !code) return { ok: false, error: 'ticket_gen_failed' };
+
+  const { data: complaint, error: insErr } = await db
+    .from('complaints')
+    .insert({
+      tenant_id: tenant.id,
+      ticket_code: code,
+      issue_type: input.issueType,
+      description: input.description || null,
+      photo_url: input.photoUrl,
+      photo_public_id: input.photoPublicId || null,
+      gps_lat: input.gpsLat ?? null,
+      gps_lng: input.gpsLng ?? null,
+      gps_accuracy_m: input.gpsAccuracy ?? null,
+      vasti_id: input.vastiId,
+      landmark: input.landmark.trim(),
+      galli_detail: input.galliDetail?.trim() || null,
+      citizen_name: input.citizenName.trim(),
+      citizen_phone: input.citizenPhone,
+      status: 'new',
+    })
+    .select('id, ticket_code')
+    .single();
+  if (insErr || !complaint) return { ok: false, error: 'insert_failed' };
+
+  await db.from('complaint_events').insert({
+    complaint_id: complaint.id,
+    actor_id: null,
+    event_type: 'created',
+    detail: 'तक्रार नोंदवली · Complaint registered',
+  });
+
+  await notifier().onCreated({
+    to: input.citizenPhone,
+    ticketCode: complaint.ticket_code,
+    citizenName: input.citizenName,
+  });
+
+  return { ok: true, ticketCode: complaint.ticket_code };
+}
