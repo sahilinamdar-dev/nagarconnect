@@ -13,11 +13,15 @@ export default async function PublicComplaintPage({
   const { slug } = await params;
   const db = createAdminSupabase();
 
+  // Single round-trip: tenant + its active vastis via embedded resource,
+  // instead of two sequential queries (this page is on the network's
+  // critical path for every citizen visit, so latency here matters most).
   const { data: tenant } = await db
     .from('tenants')
-    .select('*')
+    .select('*, vastis(*)')
     .eq('slug', slug)
-    .single<Tenant>();
+    .eq('vastis.is_active', true)
+    .single<Tenant & { vastis: Vasti[] }>();
 
   if (!tenant) notFound();
 
@@ -31,15 +35,9 @@ export default async function PublicComplaintPage({
     );
   }
 
-  const { data: vastis } = await db
-    .from('vastis')
-    .select('*')
-    .eq('tenant_id', tenant.id)
-    .eq('is_active', true)
-    .order('name_marathi')
-    .returns<Vasti[]>();
+  const vastis = [...tenant.vastis].sort((a, b) => a.name_marathi.localeCompare(b.name_marathi));
 
   return (
-    <ComplaintForm tenant={tenant} vastis={vastis ?? []} />
+    <ComplaintForm tenant={tenant} vastis={vastis} />
   );
 }
