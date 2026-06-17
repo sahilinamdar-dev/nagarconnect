@@ -4,29 +4,29 @@ import { createServerSupabase } from './supabase/server';
 import type { TeamMember, Tenant } from './types';
 
 // Loads the logged-in member + their tenant. Redirects to login if absent.
-// cache() dedupes the 3 round-trips when layout AND page both call this
-// in the same request — halves admin page latency.
+// cache() dedupes this across layout + page in the same request.
+//
+// Uses getSession() (reads the cookie, no network call) instead of
+// getUser() (always round-trips to Supabase Auth) — safe here because
+// proxy.ts middleware already called getUser() to verify the session
+// for every /admin/* request before this ever runs. Combined with
+// embedding tenants in the team_members select, this cuts page load
+// from 4 sequential round-trips (middleware getUser + getUser + member
+// + tenant) down to 1 (middleware getUser only).
 export const requireMember = cache(async (): Promise<{ member: TeamMember; tenant: Tenant }> => {
   const supabase = await createServerSupabase();
   const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect('/admin/login');
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session) redirect('/admin/login');
 
   const { data: member } = await supabase
     .from('team_members')
-    .select('*')
-    .eq('auth_user_id', user.id)
+    .select('*, tenant:tenants(*)')
+    .eq('auth_user_id', session.user.id)
     .eq('is_active', true)
-    .single<TeamMember>();
+    .single<TeamMember & { tenant: Tenant }>();
   if (!member) redirect('/admin/login');
 
-  const { data: tenant } = await supabase
-    .from('tenants')
-    .select('*')
-    .eq('id', member.tenant_id)
-    .single<Tenant>();
-  if (!tenant) redirect('/admin/login');
-
-  return { member, tenant };
+  return { member, tenant: member.tenant };
 });

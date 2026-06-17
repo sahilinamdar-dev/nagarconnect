@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -29,6 +30,9 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen flex items-center justify-center bg-gray-100 p-5">
       <form onSubmit={onSubmit} className="w-full max-w-sm bg-white rounded-2xl shadow p-6 space-y-4">
+        <Link href="/" className="inline-flex items-center gap-1 text-sm text-gray-400 hover:text-teal-700">
+          ← मुख्यपृष्ठ · Home
+        </Link>
         <h1 className="text-xl font-bold">Nagarsevak Connect</h1>
         <p className="text-sm text-gray-500">कार्यालय लॉगिन · Office login</p>
         <input
