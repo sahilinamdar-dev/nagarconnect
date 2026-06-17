@@ -18,6 +18,7 @@ export default function ComplaintForm({
   const theme = tenant.theme_color || '#0f766e';
 
   // form state
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string>('');
   const [issueType, setIssueType] = useState<IssueType | ''>('');
@@ -179,6 +180,17 @@ export default function ComplaintForm({
           >
             {tt('checkStatus', lang)}
           </Link>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            className="mt-3 w-full rounded-xl py-3 font-semibold border-2"
+            style={{ color: theme, borderColor: theme }}
+          >
+            + नवीन तक्रार · New complaint
+          </button>
+          <Link href="/" className="mt-3 block text-center text-sm text-gray-400 hover:text-gray-600">
+            ← मुख्यपृष्ठ · Home
+          </Link>
         </div>
       </main>
     );
@@ -187,6 +199,9 @@ export default function ComplaintForm({
   return (
     <main className="min-h-screen bg-gray-50 pb-10">
       <header className="px-5 py-4 text-white" style={{ backgroundColor: theme }}>
+        <Link href="/" className="inline-flex items-center gap-1 text-xs opacity-80 hover:opacity-100 mb-2">
+          ← मुख्यपृष्ठ · Home
+        </Link>
         <div className="flex items-center justify-between gap-2">
           <div>
             <h1 className="text-lg font-bold leading-tight">{tenant.ward_name || tenant.name}</h1>
@@ -221,23 +236,46 @@ export default function ComplaintForm({
 
         {/* Photo */}
         <Field label={`${tt('photo', lang)} *`} hint={tt('photoHint', lang)} error={fieldErrors.photo}>
-          <label className="block">
+          <div className="relative">
             {preview ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="preview" className="w-full h-52 object-cover rounded-xl" />
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={preview} alt="preview" className="w-full h-52 object-cover rounded-xl" />
+                <div className="absolute bottom-2 right-2 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="rounded-lg bg-black/60 text-white text-xs font-semibold px-3 py-1.5 backdrop-blur"
+                  >
+                    ✏️ बदला · Change
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setFile(null); setPreview(''); }}
+                    className="rounded-lg bg-black/60 text-white text-xs font-semibold px-3 py-1.5 backdrop-blur"
+                  >
+                    ✕
+                  </button>
+                </div>
+              </>
             ) : (
-              <div className="w-full h-40 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 text-4xl">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full h-40 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center text-gray-400 text-4xl"
+              >
                 📷
-              </div>
+              </button>
             )}
             <input
+              ref={fileInputRef}
               type="file"
               accept="image/*"
               capture="environment"
               onChange={onPickPhoto}
               className="hidden"
             />
-          </label>
+          </div>
         </Field>
 
         {/* Issue type */}

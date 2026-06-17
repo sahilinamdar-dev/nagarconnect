@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { requireMember } from '@/lib/auth';
 import { getAdminLang } from '@/lib/adminLang';
@@ -61,6 +62,11 @@ export default async function ComplaintsList({
 
   return (
     <div className="space-y-5">
+      <nav className="text-sm text-slate-400 flex items-center gap-1.5">
+        <Link href="/admin" className="hover:text-teal-700">{tt('dashboard', adminLang)}</Link>
+        <span>›</span>
+        <span className="text-slate-600 font-medium">{tt('complaints', adminLang)}</span>
+      </nav>
       <h1 className="text-2xl font-bold text-slate-800">
         {tt('complaints', adminLang)}{' '}
         <span className="text-base font-medium text-slate-400">({rows.length})</span>
@@ -119,13 +125,13 @@ export default async function ComplaintsList({
               href={`/admin/complaints/${r.id}`}
               className="group flex gap-3 bg-white rounded-2xl border border-slate-100 shadow-sm hover:shadow-md hover:border-slate-200 transition-all p-3"
             >
-              {/* eslint-disable-next-line @next/next/no-img-element */}
               {r.photo_url ? (
-                <img
+                <Image
                   src={r.photo_url}
                   alt=""
+                  width={80}
+                  height={80}
                   className="w-20 h-20 rounded-xl object-cover flex-shrink-0"
-                  loading="lazy"
                 />
               ) : (
                 <div className="w-20 h-20 rounded-xl bg-slate-100 flex items-center justify-center text-slate-300 text-2xl flex-shrink-0">

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { notFound } from 'next/navigation';
 import { createServerSupabase } from '@/lib/supabase/server';
 import { requireMember } from '@/lib/auth';
@@ -7,6 +8,7 @@ import { STATUS_META, issueLabel, tt } from '@/lib/i18n';
 import type { Complaint, ComplaintEvent, IssueType, TeamMember } from '@/lib/types';
 import ActionPanel from './ActionPanel';
 import MapPin from './MapPin';
+import BackButton from '../../BackButton';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,13 +43,15 @@ export default async function ComplaintDetail({
 
   return (
     <div className="space-y-5">
+      <nav className="text-sm text-slate-400 flex items-center gap-1.5">
+        <Link href="/admin" className="hover:text-teal-700">{tt('dashboard', lang)}</Link>
+        <span>›</span>
+        <Link href="/admin/complaints" className="hover:text-teal-700">{tt('complaints', lang)}</Link>
+        <span>›</span>
+        <span className="text-slate-600 font-medium font-mono">{c.ticket_code}</span>
+      </nav>
       <div className="flex items-center gap-3 flex-wrap">
-        <Link
-          href="/admin/complaints"
-          className="rounded-full bg-white border border-slate-200 px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-50 shadow-sm"
-        >
-          ← {tt('back', lang)}
-        </Link>
+        <BackButton label={tt('back', lang)} fallbackHref="/admin/complaints" />
         <h1 className="font-mono font-bold text-lg text-slate-800">{c.ticket_code}</h1>
         <span
           className="px-3 py-1 rounded-full text-white text-xs font-semibold shadow-sm"
@@ -129,9 +133,14 @@ function Photo({ label, url }: { label: string; url: string | null }) {
     <figure className="bg-white rounded-2xl border border-slate-100 shadow-sm p-2">
       <figcaption className="text-xs font-medium text-slate-500 mb-1.5 px-1">{label}</figcaption>
       {url ? (
-        <a href={url} target="_blank" rel="noreferrer">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={url} alt={label} className="w-full h-44 object-cover rounded-xl hover:opacity-90 transition-opacity" />
+        <a href={url} target="_blank" rel="noreferrer" className="block relative w-full h-44">
+          <Image
+            src={url}
+            alt={label}
+            fill
+            sizes="(max-width: 640px) 50vw, 320px"
+            className="object-cover rounded-xl hover:opacity-90 transition-opacity"
+          />
         </a>
       ) : (
         <div className="w-full h-44 rounded-xl bg-slate-50 flex items-center justify-center text-slate-300 text-3xl">

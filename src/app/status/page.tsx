@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import Link from 'next/link';
 import { checkStatus, type StatusResult } from './actions';
 import { STATUS_META } from '@/lib/i18n';
 
@@ -26,6 +27,9 @@ function StatusInner() {
   return (
     <main className="min-h-screen bg-gray-50 p-5">
       <div className="max-w-md mx-auto">
+        <Link href="/" className="inline-flex items-center gap-1 text-sm text-gray-500 hover:text-teal-700 mb-3">
+          ← मुख्यपृष्ठ · Home
+        </Link>
         <h1 className="text-xl font-bold mb-1">स्थिती तपासा · Check status</h1>
         <p className="text-sm text-gray-500 mb-4">तक्रार क्रमांक व मोबाईल टाका · Enter ticket ID and mobile</p>
 

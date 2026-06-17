@@ -3,7 +3,10 @@ import { createAdminSupabase } from '@/lib/supabase/admin';
 import type { Tenant, Vasti } from '@/lib/types';
 import ComplaintForm from './ComplaintForm';
 
-export const dynamic = 'force-dynamic';
+// Tenant branding + vasti list change rarely (admin settings, not per-complaint),
+// so this page is cached and revalidated in the background instead of hitting
+// Supabase on every citizen visit — cuts repeat-visit latency to ~0.
+export const revalidate = 60;
 
 export default async function PublicComplaintPage({
   params,
